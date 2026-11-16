@@ -8,8 +8,10 @@ from analysis import (COLUMNS, DOMAINS, NAMES, LEVELS, BASELINE_DAYS, DOSE_LIMIT
                       build_report)
 from experiment import figures
 from reaction_test import render_reaction_test
+from style import COLORS, PLOTLY_COLORWAY, apply_style
 
 st.set_page_config(page_title="AstroPulse", layout="wide")
+apply_style()
 st.title("AstroPulse")
 st.caption("Decision-support aid, not a diagnosis. Simulated data.")
 
@@ -26,7 +28,7 @@ UNITS = {"day": ("Day number, 1, 2, 3... (consecutive, no gaps)", "integer"),
          "temp_c": ("Body temperature, °C", "decimal"),
          "hrv_rmssd": ("Heart rate variability RMSSD, ms", "decimal"),
          "grip_kg": ("Grip strength, kg", "decimal")}
-ICON = {0: "🟢", 1: "🟡", 2: "🔴"}
+ICON = {0: ":green[●]", 1: ":yellow[●]", 2: ":red[●]"}
 
 # ---------------- Reaction test tab ----------------
 with tab_pvt:
@@ -43,6 +45,9 @@ with tab_exp:
         st.warning("Run `python experiment.py` first.")
     else:
         for f in figures(pd.read_csv(path)):
+            f.update_layout(colorway=PLOTLY_COLORWAY,
+                            font=dict(family="Courier New, Courier, monospace", color=COLORS["text"]),
+                            paper_bgcolor=COLORS["surface"], plot_bgcolor=COLORS["surface"])
             st.plotly_chart(f, use_container_width=True)
         st.caption("Synthetic data, not clinical validation. Results depend on unsourced simulation assumptions.")
 
@@ -148,10 +153,12 @@ with tab_dash:
     st.subheader("Day view")
     day = st.slider("Day", 1, len(df), len(df))
     idx = day - 1
-    cols = st.columns(len(DOMAINS))
-    for col, name in zip(cols, DOMAINS):
-        lvl = int(dom[name].iloc[idx])
-        col.metric(name, f"{ICON[lvl]} {LEVELS[lvl].capitalize()}")
+    with st.container(key="domain_statuses"):
+        cols = st.columns(len(DOMAINS))
+        for col, name in zip(cols, DOMAINS):
+            lvl = int(dom[name].iloc[idx])
+            with col.container(key=f"domain_level_{lvl}_{name}"):
+                st.metric(name, LEVELS[lvl].capitalize())
 
     st.markdown("**What changed**")
     msgs = explain(z, lv, idx)
@@ -167,10 +174,13 @@ with tab_dash:
     var = st.selectbox("Variable", COLUMNS, format_func=lambda c: NAMES[c])
     mu, sd = base.loc[var, "mu"], base.loc[var, "sigma"]
     fig = go.Figure()
-    fig.add_hrect(y0=mu - 2 * sd, y1=mu + 2 * sd, fillcolor="green", opacity=0.12, line_width=0)
+    fig.add_hrect(y0=mu - 2 * sd, y1=mu + 2 * sd, fillcolor=COLORS["green"], opacity=0.12, line_width=0)
     fig.add_hline(y=mu, line_dash="dash")
-    fig.add_vrect(x0=0.5, x1=BASELINE_DAYS + 0.5, fillcolor="gray", opacity=0.10, line_width=0)
+    fig.add_vrect(x0=0.5, x1=BASELINE_DAYS + 0.5, fillcolor=COLORS["baseline"], opacity=0.10, line_width=0)
     fig.add_trace(go.Scatter(x=df["day"], y=df[var], mode="lines+markers", name=NAMES[var]))
     fig.update_layout(xaxis_title="Day", yaxis_title=NAMES[var], height=380)
+    fig.update_layout(colorway=PLOTLY_COLORWAY,
+                      font=dict(family="Courier New, Courier, monospace", color=COLORS["text"]),
+                      paper_bgcolor=COLORS["surface"], plot_bgcolor=COLORS["surface"])
     st.plotly_chart(fig, use_container_width=True)
     st.caption("Green band = baseline mean ± 2 SD. Gray zone = baseline window.")
