@@ -132,3 +132,38 @@ def summarize(z, levels, dom):
                      "Keep monitoring.")
     lines.append("_Decision-support aid, not a diagnosis. Synthetic data._")
     return "\n".join(lines)
+
+# Source: NASA-STD-3001 Vol. 1 [V1 4030], career effective dose limit (Gabo: confirm current revision).
+DOSE_LIMIT_MSV = 600.0
+
+
+def dose_summary(df, limit=DOSE_LIMIT_MSV, prior=0.0):
+    """Cumulative dose vs a configurable limit. `prior` = dose from earlier flights (career limit)."""
+    daily = df["dose_mSv"]
+    total = float(daily.sum()) + prior
+    avg = float(daily.mean())
+    return {"total": total, "pct": 100 * total / limit, "avg_daily": avg,
+            "days_left": (limit - total) / avg if avg > 0 else None}  # simple linear estimate
+
+
+def build_report(df, z, lv, dom, ds):
+    """Plain-text (Markdown) report for the crew medical officer / mission control. Rule-based, no ML."""
+    n = len(df)
+    last = n - 1
+    out = ["# AstroPulse summary report", "",
+           "_Decision-support aid, not a diagnosis. Synthetic data._", "",
+           f"Days documented: {n}. Baseline: days 1-{BASELINE_DAYS}.", "",
+           f"## Status on day {n}"]
+    for name in DOMAINS:
+        out.append(f"- {name}: {LEVELS[int(dom[name].iloc[last])]}")
+    out += ["", f"## Active alerts on day {n}"]
+    msgs = explain(z, lv, last)
+    if msgs:
+        for m in sorted(msgs, key=lambda m: -m["level"]):
+            out.append(f"- [{LEVELS[m['level']].upper()}] {m['text']}")
+    else:
+        out.append("- None.")
+    out += ["", "## Whole-log analysis", summarize(z, lv, dom), "",
+            "## Cumulative radiation dose",
+            f"- {ds['total']:.1f} mSv ({ds['pct']:.1f} % of the configured limit). Simulated values."]
+    return "\n".join(out)

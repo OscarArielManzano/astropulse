@@ -13,7 +13,7 @@ const N=__N__, LAPSE=__LAPSE__;
 let state="idle", trial=0, rts=[], fs=0, t0=0, timer=null;
 const box=document.getElementById("box"), out=document.getElementById("out");
 function nextTrial(){
-  state="wait"; box.style.background="#1e5eff"; box.textContent="Espera el rojo... ("+(trial+1)+"/"+N+")";
+  state="wait"; box.style.background="#1e5eff"; box.textContent="Wait for the red... ("+(trial+1)+"/"+N+")";
   timer=setTimeout(()=>{state="go"; box.style.background="#e02020"; box.textContent="¡CLIC!"; t0=performance.now();},
                    2000+Math.random()*4000);
 }
