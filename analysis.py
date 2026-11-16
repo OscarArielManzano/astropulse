@@ -3,11 +3,12 @@ COLUMNS = ["sleep_h", "hr_rest", "exercise_min", "stress",
            "pvt_lapses_pct", "dose_mSv", "temp_c", "hrv_rmssd", "grip_kg"]
 
 DOMAINS = {
-    "Conductual y cognitivo": ["sleep_h", "stress", "pvt_lapses_pct"],
+    "Behavioral & cognitive": ["sleep_h", "stress", "pvt_lapses_pct"],
     "Cardiovascular": ["hr_rest", "hrv_rmssd"],
-    "Hueso y músculo": ["exercise_min", "grip_kg"],
-    "Inmunidad y radiación": ["dose_mSv", "temp_c"],
+    "Bone & muscle": ["exercise_min", "grip_kg"],
+    "Immunity & radiation": ["dose_mSv", "temp_c"],
 }
+
 
 
 """Línea base y z-scores. Ayuda a la decisión, no diagnóstico. Datos sintéticos."""
@@ -35,7 +36,7 @@ def compute_zscores(df, baseline):
     return z
 
 PERSIST_DAYS = 3  # Foundation Document, sección 8
-LEVELS = {0: "verde", 1: "amarillo", 2: "rojo"}
+LEVELS = {0: "green", 1: "yellow", 2: "red"}
 
 
 def level_from_z(z):
@@ -64,15 +65,15 @@ def domain_levels(levels):
 def z_days(levels):
     return levels.index + 1  # solo para alinear con la columna day (1..N)
 
-NAMES = {"sleep_h": "Horas de sueño", "hr_rest": "Pulso en reposo", "exercise_min": "Minutos de ejercicio",
-         "stress": "Estrés", "pvt_lapses_pct": "Lapsos de reacción", "dose_mSv": "Dosis de radiación",
-         "temp_c": "Temperatura corporal", "hrv_rmssd": "Variabilidad cardiaca (HRV)", "grip_kg": "Fuerza de agarre"}
-ACTIONS = {1: "Vigilar: repite la medición mañana y revisa cómo te sientes.",
-           2: "Revisar: considera informar al oficial médico o a control de misión."}
+NAMES = {"sleep_h": "Sleep hours", "hr_rest": "Resting heart rate", "exercise_min": "Exercise minutes",
+         "stress": "Stress", "pvt_lapses_pct": "Reaction lapses", "dose_mSv": "Radiation dose",
+         "temp_c": "Body temperature", "hrv_rmssd": "Heart rate variability (HRV)", "grip_kg": "Grip strength"}
+ACTIONS = {1: "Watch: repeat the measurement tomorrow and note how you feel.",
+           2: "Review: consider informing the crew medical officer or mission control."}
 
 
 def explain(z, levels, idx):
-    """Mensajes del día idx (0 = día 1): qué variable se desvió, cuánto y por cuántos días seguidos."""
+    """Messages for day idx (0 = day 1): which variable deviated, by how much, and for how many days."""
     msgs = []
     for dom, cols in DOMAINS.items():
         for c in cols:
@@ -80,11 +81,54 @@ def explain(z, levels, idx):
             if lvl == 0:
                 continue
             sign = np.sign(z[c].iloc[idx])
-            n = 0  # días consecutivos con |z|>=1 y el mismo signo
+            n = 0  # consecutive days with |z|>=1 and the same sign
             while idx - n >= 0 and np.sign(z[c].iloc[idx - n]) == sign and abs(z[c].iloc[idx - n]) >= 1:
                 n += 1
-            word = "por encima" if sign > 0 else "por debajo"
-            text = (f"{NAMES[c]}: {abs(z[c].iloc[idx]):.1f} desviaciones {word} de tu línea base, "
-                    f"{n} día(s) seguidos. {ACTIONS[lvl]}")
-            msgs.append({"dominio": dom, "variable": c, "nivel": lvl, "texto": text})
+            word = "above" if sign > 0 else "below"
+            text = (f"{NAMES[c]}: {abs(z[c].iloc[idx]):.1f} SD {word} your baseline, "
+                    f"{n} consecutive day(s). {ACTIONS[lvl]}")
+            msgs.append({"domain": dom, "variable": c, "level": lvl, "text": text})
     return msgs
+
+
+def summarize(z, levels, dom):
+    """Overall text summary of the whole log (up to the last documented day). Rule-based, no ML."""
+    n = len(dom)
+    day = dom["day"]
+    lines = [f"**Days documented:** {n} (baseline = days 1-{BASELINE_DAYS})."]
+    ever = False
+    for name in DOMAINS:
+        s = dom[name]
+        alert = s >= 1
+        if not alert.any():
+            lines.append(f"- **{name}:** no sustained deviations.")
+            continue
+        ever = True
+        d1, d2 = int(day[alert].iloc[0]), int(day[alert].iloc[-1])
+        peak = LEVELS[int(s.max())]
+        now = LEVELS[int(s.iloc[-1])]
+        lines.append(f"- **{name}:** alerts between day {d1} and day {d2}, "
+                     f"peak level {peak} ({int((s == 2).sum())} red day(s)); status on day {n}: {now}.")
+    # Variables with the largest sustained deviation
+    rows = []
+    for c in COLUMNS:
+        if (levels[c] > 0).any():
+            i = z[c].abs().idxmax()
+            rows.append((abs(z[c][i]), c, int(day[i]), "above" if z[c][i] > 0 else "below"))
+    if rows:
+        lines.append("")
+        lines.append("**Largest deviations (peak |z|):**")
+        for peak_z, c, d, w in sorted(rows, reverse=True)[:4]:
+            lines.append(f"- {NAMES[c]}: {peak_z:.1f} SD {w} baseline on day {d}.")
+    lines.append("")
+    active = [name for name in DOMAINS if int(dom[name].iloc[-1]) > 0]
+    if not ever:
+        lines.append("**Conclusion:** no sustained deviations from your personal baseline in this log.")
+    elif active:
+        lines.append(f"**Conclusion:** deviations are still active on day {n} in: {', '.join(active)}. "
+                     "Consider a review with the crew medical officer.")
+    else:
+        lines.append(f"**Conclusion:** deviations were detected but all domains are green on day {n}. "
+                     "Keep monitoring.")
+    lines.append("_Decision-support aid, not a diagnosis. Synthetic data._")
+    return "\n".join(lines)
